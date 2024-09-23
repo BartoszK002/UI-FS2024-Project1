@@ -71,44 +71,50 @@
   }
 
   function calculateProgress(category, goal) {
-    if (!expenses[category] && !monthlyExpenses[currentMonth]?.categories[category]) {
-      return 0;
-    }
+  if (!expenses[category] && !monthlyExpenses[currentMonth]?.categories[category]) {
+    return 0;
+  }
 
-    let progress;
-    const currentDate = new Date();
-    const currentYear = currentDate.getFullYear();
+  let progress;
+  const currentDate = new Date();
+  const currentYear = currentDate.getFullYear();
 
-    if (goal.timeframe === 'yearly') {
-      const yearlyTotal = Object.entries(monthlyExpenses).reduce((sum, [monthKey, month]) => {
+  if (goal.timeframe === 'yearly') {
+    const yearlyTotal = Object.entries(monthlyExpenses).reduce((sum, [monthKey, month]) => {
+      const monthDate = new Date(monthKey);
+      if (monthDate.getFullYear() === currentYear) {
+        return sum + (month.categories[category]?.value || 0);
+      }
+      return sum;
+    }, 0);
+
+    if (goal.type === 'spending') {
+      progress = (yearlyTotal / goal.amount) * 100;
+    } else if (goal.type === 'saving') {
+      const yearlyBudget = Object.entries(monthlyExpenses).reduce((sum, [monthKey, month]) => {
         const monthDate = new Date(monthKey);
         if (monthDate.getFullYear() === currentYear) {
-          return sum + (month.categories[category]?.value || 0);
+          return sum + (month.categories[category]?.max || 0);
         }
         return sum;
       }, 0);
-
-      if (goal.type === 'spending') {
-        progress = (yearlyTotal / goal.amount) * 100;
-      } else if (goal.type === 'saving') {
-        const remaining = goal.amount - (expenses[category]?.max - yearlyTotal);
-        progress = ((goal.amount - remaining) / goal.amount) * 100;
-      }
-    } else {
-      const expenseValue = expenses[category]?.value || monthlyExpenses[currentMonth]?.categories[category]?.value || 0;
-      const budget = expenses[category]?.max || monthlyExpenses[currentMonth]?.categories[category]?.max || 0;
-
-      if (goal.type === 'spending') {
-        progress = (expenseValue / goal.amount) * 100;
-      } else if (goal.type === 'saving') {
-        const remaining = goal.amount - (budget - expenseValue);
-        progress = ((goal.amount - remaining) / goal.amount) * 100;
-      }
+      const yearlySavings = yearlyBudget - yearlyTotal;
+      progress = (yearlySavings / goal.amount) * 100;
     }
+  } else {
+    const expenseValue = expenses[category]?.value || monthlyExpenses[currentMonth]?.categories[category]?.value || 0;
+    const budget = expenses[category]?.max || monthlyExpenses[currentMonth]?.categories[category]?.max || 0;
 
-    return progress;
+    if (goal.type === 'spending') {
+      progress = (expenseValue / goal.amount) * 100;
+    } else if (goal.type === 'saving') {
+      const remaining = goal.amount - (budget - expenseValue);
+      progress = ((goal.amount - remaining) / goal.amount) * 100;
+    }
   }
 
+  return progress;
+}
 
   function getProgressColor(progress) {
     if (progress <= 80) return '#4CAF50';
@@ -117,36 +123,45 @@
   }
 
   function getEstimatedYearlyTotal(category, goal) {
-    const currentDate = new Date();
-    const currentYear = currentDate.getFullYear();
-    
-    if (goal.timeframe === 'yearly') {
-      const yearlyTotal = Object.entries(monthlyExpenses).reduce((sum, [monthKey, month]) => {
-        const monthDate = new Date(monthKey);
-        if (monthDate.getFullYear() === currentYear) {
-          return sum + (month.categories[category]?.value || 0);
-        }
-        return sum;
-      }, 0);
-      console.log(`Yearly total for ${category} in ${currentYear}: ${yearlyTotal}`);
-      return yearlyTotal;
-    } else {
-      const expenseValue = expenses[category]?.value || monthlyExpenses[currentMonth]?.categories[category]?.value || 0;
-      const budget = expenses[category]?.max || monthlyExpenses[currentMonth]?.categories[category]?.max || 0;
-      return budget - expenseValue;
-    }
+  const currentDate = new Date();
+  const currentYear = currentDate.getFullYear();
+  
+  if (goal.timeframe === 'yearly') {
+    const yearlyTotal = Object.entries(monthlyExpenses).reduce((sum, [monthKey, month]) => {
+      const monthDate = new Date(monthKey);
+      if (monthDate.getFullYear() === currentYear) {
+        return sum + (month.categories[category]?.value || 0);
+      }
+      return sum;
+    }, 0);
+    console.log(`Yearly total for ${category} in ${currentYear}: ${yearlyTotal}`);
+    return yearlyTotal;
+  } else {
+    const expenseValue = expenses[category]?.value || monthlyExpenses[currentMonth]?.categories[category]?.value || 0;
+    const budget = expenses[category]?.max || monthlyExpenses[currentMonth]?.categories[category]?.max || 0;
+    return budget - expenseValue;
+  }
+}
+
+function getProgressText(category, goal) {
+  const progress = calculateProgress(category, goal);
+  let remaining;
+  const currentDate = new Date();
+  const currentYear = currentDate.getFullYear();
+
+  if (!expenses[category] && !monthlyExpenses[currentMonth]?.categories[category]) {
+    return { text: 'Category not available this month', class: 'not-available' };
   }
 
-  function getProgressText(category, goal) {
-    const progress = calculateProgress(category, goal);
-    const yearlyTotal = getEstimatedYearlyTotal(category, goal);
-    const remaining = goal.amount - (goal.timeframe === 'yearly' ? (expenses[category]?.max - yearlyTotal) : (expenses[category]?.max - expenses[category]?.value));
-
-    if (!expenses[category] && !monthlyExpenses[currentMonth]?.categories[category]) {
-      return { text: 'Category not available this month', class: 'not-available' };
-    }
-
-    if (goal.type === 'spending') {
+  if (goal.type === 'spending') {
+    if (goal.timeframe === 'yearly') {
+      remaining = goal.amount - getEstimatedYearlyTotal(category, goal);
+      if (remaining < 0) {
+        return { text: `Over by $${Math.abs(remaining).toFixed(2)}`, class: 'over-amount' };
+      } else {
+        return { text: `$${remaining.toFixed(2)} left`, class: 'remaining' };
+      }
+    } else {
       const expenseValue = expenses[category]?.value || monthlyExpenses[currentMonth]?.categories[category]?.value || 0;
       const amountLeft = goal.amount - expenseValue;
       if (amountLeft < 0) {
@@ -154,7 +169,28 @@
       } else {
         return { text: `$${amountLeft.toFixed(2)} left`, class: 'remaining' };
       }
-    } else if (goal.type === 'saving') {
+    }
+  } else if (goal.type === 'saving') {
+    if (goal.timeframe === 'yearly') {
+      const yearlyBudget = Object.entries(monthlyExpenses).reduce((sum, [monthKey, month]) => {
+        const monthDate = new Date(monthKey);
+        if (monthDate.getFullYear() === currentYear) {
+          return sum + (month.categories[category]?.max || 0);
+        }
+        return sum;
+      }, 0);
+      const yearlyExpenses = getEstimatedYearlyTotal(category, goal);
+      const yearlySavings = yearlyBudget - yearlyExpenses;
+      remaining = goal.amount - yearlySavings;
+      if (remaining <= 0) {
+        return { text: 'Goal achieved!', class: 'goal-achieved' };
+      } else {
+        return { text: `$${remaining.toFixed(2)} left to save`, class: 'remaining' };
+      }
+    } else {
+      const budget = expenses[category]?.max || monthlyExpenses[currentMonth]?.categories[category]?.max || 0;
+      const expenseValue = expenses[category]?.value || monthlyExpenses[currentMonth]?.categories[category]?.value || 0;
+      remaining = goal.amount - (budget - expenseValue);
       if (remaining <= 0) {
         return { text: 'Goal achieved!', class: 'goal-achieved' };
       } else {
@@ -162,7 +198,7 @@
       }
     }
   }
-  
+}
   // Use of AI-generated code to help with the icon mapping
   function getIconComponent(category) {
     const iconMap = {
